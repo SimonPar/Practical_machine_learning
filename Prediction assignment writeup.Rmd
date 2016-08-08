@@ -1,0 +1,130 @@
+---
+title: "Practical Machine Learning: Prediction Assignment Writeup"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+As part of Coursera's Practical Machine Learning under the Data Science Specialization, this is the "Prediction Assignment Writeup". The report's key goal is to predict the manner in which 6 participants performed some exercise as described below. This is the ???classe??? variable in the training set. The machine learning algorithm described here is applied to the 20 test cases available in the test data and the predictions are submitted in appropriate format to the Course Project Prediction Quiz for automated grading.
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har]http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## 1. Loading and cleaning data
+
+#### a. Environment setup and data load
+```{r}
+# environment setup
+setwd("/Users/Simon/Coursera_R_programming/Course Projects/Course project - Practical machine learning")
+
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+
+trainurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainfile <- "pml-training.csv"
+testfile <- "pml-testing.csv"
+
+# data load
+if(!file.exists(trainfile))
+{
+        download.file(trainurl, destfile = trainfile)
+}
+training <- read.csv(trainfile)
+if(!file.exists(testfile))
+{
+        download.file(testurl, destfile = testfile)
+}
+testing <- read.csv(testfile)
+
+# data partition 
+seed <- as.numeric(as.Date("2016-8-07"))
+set.seed(seed)
+intrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+train <- training[intrain, ]
+test <- training[-intrain, ]
+```
+
+#### b. Data cleanup
+``` {r}
+# Both training and testing datasets have NA and near zero variance (NZV) variables.
+# First, remove the NZV variables from the training data they provide us with
+NZV <- nearZeroVar(train)
+train <- train[ ,-NZV]
+test <- test[ ,-NZV]
+
+# Second, remove the NA variables from the training data they provide us with
+NAs <- sapply(train, function(x) mean(is.na(x))) > 0.95
+train <- train[ ,NAs==FALSE]
+test <- test[ , NAs==FALSE]
+
+# Third, remove identification only variables (columns 1 to 5)
+train <- train[, -(1:5)]
+test  <- test[, -(1:5)]
+
+# Do we need to remove the NA and NZV variables for the testing dataset too? Let's not do it the first time and if it works, it works! (NOTE: Don't be confused. The test dataset was created after partitioning the training dataset they provided into the train and test sets. The testing dataset was provided by them and will be used to test your prediction.)
+```
+
+## 2. Prediction modelling
+Three popular methods will be applied to model the regressions (in the train dataset) and the best one (with higher accuracy when applied to the Test dataset) will be used for the test dataset the instructors provided. The methods are of course: Random Forests, Decision Tree and Generalized Boosted Model, as described below. In short, we select random forests because the accuracy is 99%, thus the predicted accuracy for the out-of-sample error is 1%. A Confusion Matrix is plotted at the end of each analysis to better visualize the accuracy of the models.
+
+#### a. Random forest
+```{r}
+# random forests model fit on train dataset
+set.seed(seed)
+model_rf <- randomForest(classe ~ ., data = train, do.trace=100)
+
+# predict on test dataset (the partitioned one)
+predict_rf <- predict(model_rf, newdata = test)
+
+# implement confusion matrix to see the accuracy of model
+confusionMatrix(predict_rf, test$classe)
+
+```
+The accuracy is 99%, thus the predicted accuracy for the out-of-sample error is 1%.
+
+#### b. Decision tree
+```{r}
+# decision trees model fit on train dataset
+set.seed(seed)
+model_dt <- rpart(classe ~ ., data = train, method = "class")
+rpart.plot(model_dt)
+
+# predict on test dataset (the partitioned one)
+predict_dt <- predict(model_dt, newdata = test, type = "class")
+
+# implement confusion matrix to see the accuracy of model
+confusionMatrix(predict_dt, test$classe)
+```
+The accuracy is 74%, thus the predicted accuracy for the out-of-sample error is 26%.
+
+#### c. Generalized Boosted Model (GBM)
+```{r}
+# generalized boosted model fit on train dataset
+set.seed(seed)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+model_gbm <- train(classe ~ ., data = train, method = "gbm", trControl = controlGBM, verbose = FALSE)
+
+# predict on test dataset (the partitioned one)
+predict_gbm <- predict(model_gbm, newdata = test)
+
+# implement confusion matrix to see the accuracy of model
+confusionMatrix(predict_gbm, test$classe)
+```
+The accuracy is 98.5%, thus the predicted accuracy for the out-of-sample error is 1.5%.
+
+## 3. Apply top prediction model on Test data
+Given that the random forests model as been the most accurate, we apply this model to the testing dataset.
+```{r}
+TESTprediction <- predict(model_rf, newdata = testing)
+TESTprediction
+```
